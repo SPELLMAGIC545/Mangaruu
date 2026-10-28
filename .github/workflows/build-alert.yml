@@ -1,0 +1,51 @@
+name: Mangaruu build result alert
+on:
+  workflow_run:
+    workflows:
+      - Build Mangaruu APK
+    types:
+      - completed
+permissions:
+  actions: read
+  issues: write
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish result and artifact link
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const { owner, repo } = context.repo;
+            const runUrl = run.html_url;
+            const success = run.conclusion === 'success';
+            let artifactText = 'APK artifact not verified.';
+            if (success) {
+              const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+                owner, repo, run_id: run.id, per_page: 100
+              });
+              const artifact = data.artifacts.find(a => a.name === 'mangaruu-apk' && !a.expired);
+              if (artifact) {
+                artifactText = 'APK download: ' + runUrl + '/artifacts/' + artifact.id;
+              }
+            }
+            const title = 'Mangaruu build status';
+            const body = [
+              'Last build: ' + (success ? 'SUCCESS' : 'FAILED (' + run.conclusion + ')'),
+              'Run: ' + runUrl,
+              artifactText,
+              '',
+              'Note: APK build success does not prove manga reading works in Mihon.'
+            ].join('\n');
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', per_page: 100
+            });
+            const issue = issues.find(i => i.title === title && !i.pull_request);
+            if (issue) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number, body
+              });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }
