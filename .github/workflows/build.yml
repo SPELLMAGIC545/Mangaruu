@@ -1,0 +1,28 @@
+
+name: Build Mangaruu APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Prepare
+        run: |
+          unzip mangaruu-mihon-source.zip -d source
+          git clone --depth 1 https://github.com/keiyoushi/extensions-source.git upstream
+          cp -a source/src/ja/mangaruu upstream/src/ja/
+      - name: Build
+        working-directory: upstream
+        run: ./gradlew :src:ja:mangaruu:assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mangaruu-apk
+          path: upstream/src/ja/mangaruu/build/outputs/apk/**/*.apk
