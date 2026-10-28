@@ -34,6 +34,7 @@ jobs:
         working-directory: upstream
         run: |
           chmod +x gradlew
+          ./gradlew :src:ja:mangaruu:spotlessApply --no-daemon
           ./gradlew :src:ja:mangaruu:assembleDebug --stacktrace --no-daemon
       - name: Upload APK
         uses: actions/upload-artifact@v4
