@@ -1,27 +1,43 @@
-
 name: Build Mangaruu APK
-
 on:
   workflow_dispatch:
-
+  push:
+    paths:
+      - '.github/workflows/build.yml'
+      - 'mangaruu-mihon-source.zip'
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
-      - name: Prepare
+          java-version: '21'
+      - name: Prepare source
+        shell: bash
         run: |
-          unzip mangaruu-mihon-source.zip -d source
+          set -euxo pipefail
+          unzip -t mangaruu-mihon-source.zip
+          mkdir -p source
+          unzip -q mangaruu-mihon-source.zip -d source
+          test -f source/src/ja/mangaruu/build.gradle.kts
           git clone --depth 1 https://github.com/keiyoushi/extensions-source.git upstream
-          cp -a source/src/ja/mangaruu upstream/src/ja/
-      - name: Build
+          mkdir -p upstream/src/ja/mangaruu
+          cp -a source/src/ja/mangaruu/. upstream/src/ja/mangaruu/
+          sed -i 's@^loadAllIndividualExtensions()@// loadAllIndividualExtensions()@; s@^// loadIndividualExtension("all", "mangadex")@loadIndividualExtension("ja", "mangaruu")@' upstream/settings.gradle.kts
+          grep -n -F 'loadIndividualExtension("ja", "mangaruu")' upstream/settings.gradle.kts
+      - name: Build extension
         working-directory: upstream
-        run: ./gradlew :src:ja:mangaruu:assembleDebug --no-daemon
-      - uses: actions/upload-artifact@v4
+        run: |
+          chmod +x gradlew
+          ./gradlew :src:ja:mangaruu:assembleDebug --stacktrace --no-daemon
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
           name: mangaruu-apk
           path: upstream/src/ja/mangaruu/build/outputs/apk/**/*.apk
+          if-no-files-found: error
