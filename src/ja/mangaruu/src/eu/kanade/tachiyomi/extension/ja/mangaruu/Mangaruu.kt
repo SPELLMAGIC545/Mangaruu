@@ -40,7 +40,8 @@ abstract class Mangaruu : KeiSource() {
         arrayOf("指定なし", "アクション", "冒険", "ホラー", "ロマンス"),
     )
 
-    override fun getFilterList(): FilterList = FilterList(GenreFilter())
+    // KeiSource.getFilterList() is final; custom filter UI cannot override it.
+    // Genre selection remains unavailable until supported by KeiSource's API.
 
     override suspend fun getSearchMangaList(
         page: Int,
