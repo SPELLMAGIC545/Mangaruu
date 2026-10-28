@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/build.yml'
       - 'mangaruu-mihon-source.zip'
+      - 'src/**'
 permissions:
   contents: read
 jobs:
