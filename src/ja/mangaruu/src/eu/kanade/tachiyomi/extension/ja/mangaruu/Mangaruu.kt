@@ -176,7 +176,7 @@ abstract class Mangaruu : KeiSource() {
         if (arrays.isNotEmpty()) return arrays.filter(::looksLikePageImage).distinct()
 
         // Some hydrated readers store URLs in a page/image object instead of an array.
-        val embedded = IMAGE_URL.findAll(scripts).map { it.value.trimEnd('\\\\') }
+        val embedded = IMAGE_URL.findAll(scripts).map { it.value.trimEnd('\\') }
             .filter(::looksLikePageImage).distinct().toList()
         if (embedded.isNotEmpty()) return embedded
 
