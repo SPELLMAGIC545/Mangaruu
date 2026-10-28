@@ -28,6 +28,8 @@ jobs:
           git clone --depth 1 https://github.com/keiyoushi/extensions-source.git upstream
           mkdir -p upstream/src/ja/mangaruu
           cp -a source/src/ja/mangaruu/. upstream/src/ja/mangaruu/
+          # Checked-in sources override the original ZIP so improvements are built.
+          if [ -d src/ja/mangaruu ]; then cp -a src/ja/mangaruu/. upstream/src/ja/mangaruu/; fi
           sed -i 's@^loadAllIndividualExtensions()@// loadAllIndividualExtensions()@; s@^// loadIndividualExtension("all", "mangadex")@loadIndividualExtension("ja", "mangaruu")@' upstream/settings.gradle.kts
           grep -n -F 'loadIndividualExtension("ja", "mangaruu")' upstream/settings.gradle.kts
       - name: Build extension
