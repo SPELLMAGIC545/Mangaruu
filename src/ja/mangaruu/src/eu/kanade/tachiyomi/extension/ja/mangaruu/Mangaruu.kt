@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.extension.ja.mangaruu
 
+import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -34,15 +35,33 @@ abstract class Mangaruu : KeiSource() {
     override suspend fun getLatestUpdates(page: Int): MangasPage =
         listManga("$baseUrl/on-going${if (page > 1) "?page=$page" else ""}")
 
+    private class GenreFilter : Filter.Select<String>(
+        "ジャンル",
+        arrayOf("指定なし", "アクション", "冒険", "ホラー", "ロマンス"),
+    )
+
+    override fun getFilterList(): FilterList = FilterList(GenreFilter())
+
     override suspend fun getSearchMangaList(
         page: Int,
         query: String,
         filters: FilterList,
     ): MangasPage {
-        // Search endpoint is unconfirmed; prefer URL-search of a /m/... link if this returns no hits.
-        val encoded = URLEncoder.encode(query, "UTF-8")
-        val document = client.get("$baseUrl/search?q=$encoded${if (page > 1) "&page=$page" else ""}").asJsoup()
-        return mangaListFrom(document)
+        val genre = filters.filterIsInstance<GenreFilter>().firstOrNull()?.state ?: 0
+        val slugs = listOf("", "akushon", "bouken", "horaa", "romansu")
+        val keyword = query.trim()
+        if (genre > 0 && keyword.isBlank()) {
+            val slug = slugs.getOrNull(genre) ?: return MangasPage(emptyList(), false)
+            val suffix = if (page > 1) "/page/$page" else ""
+            return listManga("$baseUrl/genre/$slug$suffix")
+        }
+        val encoded = URLEncoder.encode(keyword, "UTF-8")
+        val suffix = if (page > 1) "&page=$page" else ""
+        val document = client.get("$baseUrl/search?q=$encoded$suffix").asJsoup()
+        val results = mangaListFrom(document)
+        // Combined genre + text search is not exposed by a confirmed site endpoint.
+        // Do not silently pretend that the selected genre was applied.
+        return results
     }
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
