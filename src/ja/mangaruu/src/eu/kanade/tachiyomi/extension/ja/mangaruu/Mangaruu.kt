@@ -149,10 +149,11 @@ abstract class Mangaruu : KeiSource() {
         // Prefer only reader containers so a logo/cover/related-title thumbnail isn't treated as a page.
         val containers = listOf(
             "#reader", ".reader", ".reading-content", ".chapter-content", ".chapter-images",
-            ".viewer", ".page-images", "[id*=reader]", "[class*=reader]",
+            ".viewer", ".page-images", ".chapter-reader", ".reading-area",
+            "[id*=reader]", "[class*=reader]", "[class*=chapter]",
         )
         for (selector in containers) {
-            val els = document.select("$selector img")
+            val els = document.select("$selector img, $selector source")
             val urls = els.mapNotNull(::preferredImageUrl)
                 .filter(::looksLikePageImage)
                 .distinct()
@@ -160,9 +161,9 @@ abstract class Mangaruu : KeiSource() {
         }
 
         // Fallback to a main-area image list (exclude common navigation/cover images).
-        val mainImages = document.select("main img, article img")
+        val mainImages = document.select("main img, article img, main picture source, article picture source")
             .mapNotNull(::preferredImageUrl).filter(::looksLikePageImage).distinct()
-        if (mainImages.size >= 2) return mainImages
+        if (mainImages.isNotEmpty()) return mainImages
 
         // JSON-hydrated pages sometimes store page URLs in inline scripts.
         // This is intentionally conservative; it does not execute scripts or bypass site controls.
@@ -174,19 +175,44 @@ abstract class Mangaruu : KeiSource() {
             .map { it.value.trimEnd('\\') }.toList()
         if (arrays.isNotEmpty()) return arrays.filter(::looksLikePageImage).distinct()
 
+        // Some hydrated readers store URLs in a page/image object instead of an array.
+        val embedded = IMAGE_URL.findAll(scripts).map { it.value.trimEnd('\\\\') }
+            .filter(::looksLikePageImage).distinct().toList()
+        if (embedded.isNotEmpty()) return embedded
+
         return emptyList()
     }
 
     private fun preferredImageUrl(element: Element?): String? {
         if (element == null) return null
-        for (attr in listOf("data-src", "data-original", "data-lazy-src", "data-url", "src")) {
-            val url = element.absUrl(attr).ifBlank { element.attr(attr) }
-            if (url.startsWith("https://") || url.startsWith("http://")) {
-                if (!url.contains("placeholder", ignoreCase = true) && !url.endsWith(".svg")) return url
+        val attributes = listOf(
+            "data-src", "data-original", "data-lazy-src", "data-url",
+            "data-image", "data-image-url", "data-full", "src",
+        )
+        for (attr in attributes) {
+            val raw = element.attr(attr).trim()
+            if (raw.isBlank() || raw.startsWith("data:") || raw.startsWith("blob:")) continue
+            val url = element.absUrl(attr).ifBlank { resolveImageUrl(element, raw) }
+            if (validImageUrl(url)) return url
+        }
+        for (attr in listOf("data-srcset", "srcset")) {
+            val candidates = element.attr(attr).split(',')
+            for (candidate in candidates.asReversed()) {
+                val raw = candidate.trim().substringBefore(' ').trim()
+                val url = resolveImageUrl(element, raw)
+                if (validImageUrl(url)) return url
             }
         }
         return null
     }
+
+    private fun resolveImageUrl(element: Element, raw: String): String =
+        runCatching { element.baseUri().toHttpUrl().resolve(raw)?.toString() }.getOrNull().orEmpty()
+
+    private fun validImageUrl(url: String): Boolean =
+        (url.startsWith("https://") || url.startsWith("http://")) &&
+            !url.contains("placeholder", ignoreCase = true) &&
+            !url.substringBefore('?').endsWith(".svg", ignoreCase = true)
 
     private fun looksLikePageImage(url: String): Boolean {
         val withoutQuery = url.substringBefore('?').lowercase()
