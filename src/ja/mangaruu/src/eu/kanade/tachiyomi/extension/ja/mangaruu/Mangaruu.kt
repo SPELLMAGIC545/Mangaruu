@@ -113,6 +113,12 @@ abstract class Mangaruu : KeiSource() {
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val document = client.get(getChapterUrl(chapter)).asJsoup()
         val images = extractPages(document)
+        if (images.isEmpty()) {
+            throw IllegalStateException(
+                "Mangaruu: no chapter image URLs found in HTML for ${chapter.url}. " +
+                    "The reader may load pages through JavaScript or a separate API.",
+            )
+        }
         return images.mapIndexed { index, url -> Page(index, imageUrl = url) }
     }
 
@@ -166,6 +172,15 @@ abstract class Mangaruu : KeiSource() {
             .mapNotNull(::preferredImageUrl).filter(::looksLikePageImage).distinct()
         if (mainImages.isNotEmpty()) return mainImages
 
+        // Reader implementations can place page URLs in data attributes rather than <img>.
+        val dataImages = document.select(
+            "[data-pages], [data-images], [data-page], [data-image], [data-image-url], [data-url]",
+        ).flatMap { element ->
+            listOf("data-pages", "data-images", "data-page", "data-image", "data-image-url", "data-url")
+                .flatMap { key -> extractEmbeddedImageUrls(element.attr(key), document) }
+        }.distinct()
+        if (dataImages.isNotEmpty()) return dataImages
+
         // JSON-hydrated pages sometimes store page URLs in inline scripts.
         // This is intentionally conservative; it does not execute scripts or bypass site controls.
         val scripts = document.select("script").joinToString("\n") { it.data() }
@@ -181,7 +196,27 @@ abstract class Mangaruu : KeiSource() {
             .filter(::looksLikePageImage).distinct().toList()
         if (embedded.isNotEmpty()) return embedded
 
+        // Support JSON-escaped URLs and extensionless CDN image endpoints in page objects.
+        val hydrated = extractEmbeddedImageUrls(scripts, document)
+        if (hydrated.isNotEmpty()) return hydrated
+
         return emptyList()
+    }
+
+    private fun extractEmbeddedImageUrls(raw: String, document: Document): List<String> {
+        val decoded = raw.replace("\\\\/", "/")
+            .replace("\\\\u002F", "/", ignoreCase = true)
+            .replace("\\\\u0026", "&", ignoreCase = true)
+            .replace("&amp;", "&")
+        // Restrict extensionless URLs to image/page-related JSON keys to avoid
+        // treating navigation, tracking, or unrelated API URLs as reader pages.
+        return EMBEDDED_IMAGE_VALUE.findAll(decoded).mapNotNull { match ->
+            val candidate = match.groupValues[1]
+            val url = runCatching {
+                document.baseUri().toHttpUrl().resolve(candidate)?.toString()
+            }.getOrNull()
+            url?.takeIf(::validImageUrl)?.takeIf(::looksLikePageImage)
+        }.distinct().toList()
     }
 
     private fun preferredImageUrl(element: Element?): String? {
@@ -231,6 +266,9 @@ abstract class Mangaruu : KeiSource() {
 
     companion object {
         private val CHAPTER_NUMBER = Regex("""(\d+(?:\.\d+)?)\s*話""")
+        private val EMBEDDED_IMAGE_VALUE = Regex(
+            """(?i)["'](?:url|src|image|imageUrl|image_url|pageUrl|page_url|file)["']\\s*:\\s*["'](https?://[^"'\\s<>]+|/[^"'\\s<>]+)["']""",
+        )
         private val IMAGE_ARRAY = Regex(
             """(?is)(?:["']?(?:images|pages|imageUrls|image_urls|chapterImages|chapter_images)["']?\s*[:=]\s*)(\[[\s\S]*?])""",
         )
