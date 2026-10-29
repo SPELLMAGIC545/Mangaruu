@@ -102,7 +102,7 @@ abstract class Mangaruu : KeiSource() {
                 SChapter.create().apply {
                     url = path
                     name = label
-                    chapter_number = CHAPTER_NUMBER.find(label)?.groupValues?.get(1)?.toFloatOrNull() ?: -1f
+                    chapter_number = CHAPTER_NUMBER.find(label)?.groupValues?.get(1)?.toFloatOrNull()\n                        ?: CHAPTER_URL_NUMBER.find(path)?.groupValues?.get(1)?.toFloatOrNull()\n                        ?: -1f
                 }
             }
             .distinctBy { it.url }
