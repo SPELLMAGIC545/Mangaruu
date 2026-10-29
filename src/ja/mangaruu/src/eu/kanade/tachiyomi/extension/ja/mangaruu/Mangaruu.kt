@@ -102,7 +102,9 @@ abstract class Mangaruu : KeiSource() {
                 SChapter.create().apply {
                     url = path
                     name = label
-                    chapter_number = CHAPTER_NUMBER.find(label)?.groupValues?.get(1)?.toFloatOrNull() ?: -1f
+                    chapter_number = CHAPTER_NUMBER.find(label)?.groupValues?.get(1)?.toFloatOrNull()
+                        ?: CHAPTER_URL_NUMBER.find(path)?.groupValues?.get(1)?.toFloatOrNull()
+                        ?: -1f
                 }
             }
             .distinctBy { it.url }
@@ -266,6 +268,7 @@ abstract class Mangaruu : KeiSource() {
 
     companion object {
         private val CHAPTER_NUMBER = Regex("""(\d+(?:\.\d+)?)\s*話""")
+        private val CHAPTER_URL_NUMBER = Regex("""-ch-(\d+(?:[.-]\d+)?)(?:-id-|$)""", RegexOption.IGNORE_CASE)
         private val EMBEDDED_IMAGE_VALUE = Regex(
             """(?i)["'](?:url|src|image|imageUrl|image_url|pageUrl|page_url|file)["']\s*:\s*["'](https?://[^"'\s<>]+|/[^"'\s<>]+)["']""",
         )
