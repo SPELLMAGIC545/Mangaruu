@@ -24,8 +24,8 @@ keiyoushi {
 
 android {
     sourceSets.named("test") {
-        java.srcDir("test")
-        kotlin.srcDir("test")
+        java.directories.add("test")
+        kotlin.directories.add("test")
     }
 }
 
@@ -37,6 +37,7 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     inputs.property("mangaruuLiveTest", providers.environmentVariable("MANGARUU_LIVE_TEST").orElse("0"))
+    inputs.property("mangaruuCapturedMetadata", providers.environmentVariable("MANGARUU_CAPTURED_METADATA").orElse("0"))
     testLogging.showStandardStreams = true
 }
 

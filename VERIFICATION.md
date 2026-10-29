@@ -21,7 +21,7 @@ MANGARUU_LIVE_TEST=1 ./gradlew :src:ja:mangaruu:testDebugUnitTest
 ./gradlew :src:ja:mangaruu:assembleDebug :src:ja:mangaruu:lintRelease
 ```
 
-`ReaderTest` executes the same DTO/decryption/URL construction functions used by `getPageList`. The fixture test checks the two actual first URLs and page order, and rejects malformed manifests. The opt-in live test fetches fresh chapter HTML, configuration and manifest, downloads all 33 URLs without cookies, Referer or Origin, and decodes every response with ImageIO. A successful HTTP status or a nonempty URL list alone does not pass. Curl supplies the test's HTTP transport so the test can use the host's HTTPS proxy.
+`ReaderTest` executes the same DTO/decryption/URL construction functions used by `getPageList`. The fixture test checks the two actual first URLs and page order, and rejects malformed manifests. By default, the opt-in live test fetches fresh chapter HTML, configuration and manifest, downloads all 33 URLs without cookies, Referer or Origin, and decodes every response with ImageIO. Hosted CI explicitly sets `MANGARUU_CAPTURED_METADATA=1`: it reads the captured chapter HTML and manifest instead of fetching these metadata endpoints, then still downloads and decodes all 33 real CDN images. The mode is printed in the test report; this CI result does not validate fresh chapter/API access. Both environment flags are Gradle test inputs so cached results cannot cross modes. A successful HTTP status or a nonempty URL list alone does not pass. Curl supplies the test's HTTP transport so the test can use the host's HTTPS proxy.
 
 The checked-in fixtures contain only public protocol fields and the encrypted manifest; no visitor IPs, cookies or manga image files are included.
 
@@ -38,3 +38,17 @@ On 2026-10-30 JST, before committing this change:
 - `lintRelease`: 0 errors; 2 Android manifest warnings (`AppLinkWarning`, `DataExtractionRules`).
 - APK SHA-256: `34000c7241b0a4de49cff08ff2ebee15140eded29490f020766f451f19743ab2`.
 - The workflow checks the XML test count and skipped count after Gradle, so a `NO-SOURCE` task cannot be mistaken for a passing test run.
+
+## GitHub-hosted runner correction
+
+Run 40934431747 compiled the tests but failed on the first request for the chapter HTML with HTTP 403, before requesting any image. Two fixture tests passed; the live test failed and no APK artifact was uploaded. This was not an APK compilation failure.
+
+CI now explicitly uses captured public metadata plus **live downloads/decoding of all 33 real CDN images**. It does not silently retry, spoof a browser, bypass the site block, turn a 403 into a passing fresh-metadata test, or skip the image test. The full fresh-metadata mode remains available (and was passed in Work before the initial commit):
+
+```sh
+MANGARUU_LIVE_TEST=1 ./gradlew :src:ja:mangaruu:testDebugUnitTest
+# Same mode as GitHub CI:
+MANGARUU_LIVE_TEST=1 MANGARUU_CAPTURED_METADATA=1 ./gradlew :src:ja:mangaruu:testDebugUnitTest
+```
+
+The corrected captured-metadata mode was also verified locally before its follow-up commit: 3 tests, 0 failures/errors/skips; all 33 real images decoded at 720 by 1024; `assembleDebug` and `lintRelease` succeeded. The live-image test took 190.1 seconds.

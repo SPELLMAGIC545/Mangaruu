@@ -45,9 +45,19 @@ class ReaderTest {
     @Test
     fun liveChapterDownloadsDecodableImages() {
         assumeTrue("Opt in with MANGARUU_LIVE_TEST=1", System.getenv("MANGARUU_LIVE_TEST") == "1")
-        val chapter = Jsoup.parse(download(CHAPTER_URL).decodeToString()).extractNextJs<ReaderData>()!!.chapter
-        val config = download("https://mangaruu.com/config.json").decodeToString().parseAs<ReaderConfig>()
-        val manifest = download(config.manifestUrl(chapter).toString()).decodeToString().parseAs<ReaderManifest>()
+        // Hosted CI cannot fetch the chapter HTML (HTTP 403). Its explicit captured
+        // metadata mode still downloads and decodes every real CDN image below.
+        val capturedMetadata = System.getenv("MANGARUU_CAPTURED_METADATA") == "1"
+        val html = if (capturedMetadata) fixture("chapter.html") else download(CHAPTER_URL).decodeToString()
+        val chapter = Jsoup.parse(html).extractNextJs<ReaderData>()!!.chapter
+        val manifest = if (capturedMetadata) {
+            println("Metadata: captured 2026-10-30; image downloads: LIVE (fresh chapter/API access is not validated in this mode)")
+            fixture("manifest.json").parseAs<ReaderManifest>()
+        } else {
+            println("Metadata: LIVE chapter HTML, config and manifest; image downloads: LIVE")
+            val config = download("https://mangaruu.com/config.json").decodeToString().parseAs<ReaderConfig>()
+            download(config.manifestUrl(chapter).toString()).decodeToString().parseAs<ReaderManifest>()
+        }
         val urls = chapter.imageUrls(manifest)
         assertEquals("The reported chapter has 33 manga pages", 33, urls.size)
         urls.forEachIndexed { index, url ->
