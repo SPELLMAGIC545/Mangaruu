@@ -267,7 +267,7 @@ abstract class Mangaruu : KeiSource() {
     companion object {
         private val CHAPTER_NUMBER = Regex("""(\d+(?:\.\d+)?)\s*話""")
         private val EMBEDDED_IMAGE_VALUE = Regex(
-            """(?i)["'](?:url|src|image|imageUrl|image_url|pageUrl|page_url|file)["']\\s*:\\s*["'](https?://[^"'\\s<>]+|/[^"'\\s<>]+)["']""",
+            """(?i)["'](?:url|src|image|imageUrl|image_url|pageUrl|page_url|file)["']\s*:\s*["'](https?://[^"'\s<>]+|/[^"'\s<>]+)["']""",
         )
         private val IMAGE_ARRAY = Regex(
             """(?is)(?:["']?(?:images|pages|imageUrls|image_urls|chapterImages|chapter_images)["']?\s*[:=]\s*)(\[[\s\S]*?])""",
