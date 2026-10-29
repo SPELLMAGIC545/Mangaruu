@@ -1,7 +1,13 @@
 name: Build Mangaruu APK
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/build.yml'
+      - 'src/**'
   push:
+    branches:
+      - main
     paths:
       - '.github/workflows/build.yml'
       - 'mangaruu-mihon-source.zip'
@@ -27,6 +33,8 @@ jobs:
           unzip -q mangaruu-mihon-source.zip -d source
           test -f source/src/ja/mangaruu/build.gradle.kts
           git clone --depth 1 https://github.com/keiyoushi/extensions-source.git upstream
+          git -C upstream fetch --depth 1 origin dbf6c05d6a9520c60533f1626616263522bbe71a
+          git -C upstream checkout --detach FETCH_HEAD
           mkdir -p upstream/src/ja/mangaruu
           cp -a source/src/ja/mangaruu/. upstream/src/ja/mangaruu/
           # Checked-in sources override the original ZIP so improvements are built.
@@ -38,10 +46,23 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :src:ja:mangaruu:spotlessApply --no-daemon
+          MANGARUU_LIVE_TEST=1 ./gradlew :src:ja:mangaruu:testDebugUnitTest --stacktrace --no-daemon
+          python -c "import xml.etree.ElementTree as E; r=E.parse('src/ja/mangaruu/build/test-results/testDebugUnitTest/TEST-eu.kanade.tachiyomi.extension.ja.mangaruu.ReaderTest.xml').getroot(); assert r.get('tests') == '3' and all(r.get(k) == '0' for k in ['failures', 'errors', 'skipped']), r.attrib"
           ./gradlew :src:ja:mangaruu:assembleDebug --stacktrace --no-daemon
+          ./gradlew :src:ja:mangaruu:lintRelease --stacktrace --no-daemon
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: mangaruu-apk
           path: upstream/src/ja/mangaruu/build/outputs/apk/**/*.apk
           if-no-files-found: error
+      - name: Upload verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mangaruu-verification
+          path: |
+            upstream/src/ja/mangaruu/build/test-results/testDebugUnitTest/**
+            upstream/src/ja/mangaruu/build/reports/tests/testDebugUnitTest/**
+            upstream/src/ja/mangaruu/build/reports/lint-results-release.*
+          if-no-files-found: warn
