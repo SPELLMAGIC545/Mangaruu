@@ -15,6 +15,7 @@ import keiyoushi.utils.extractNextJs
 import keiyoushi.utils.parseAs
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -22,6 +23,8 @@ import java.net.URLEncoder
 
 @Source
 abstract class Mangaruu : KeiSource() {
+
+    override fun OkHttpClient.Builder.configureClient(): OkHttpClient.Builder = addInterceptor(Canva2ImageInterceptor())
 
     override suspend fun getPopularManga(page: Int): MangasPage = listManga("$baseUrl/${if (page > 1) "?page=$page" else ""}")
 
@@ -92,12 +95,11 @@ abstract class Mangaruu : KeiSource() {
                 val path = link.absUrl("href").toHttpUrlOrNullSafe()?.encodedPath ?: return@mapNotNull null
                 if (!path.startsWith("/c/")) return@mapNotNull null
                 val label = link.text().trim().ifBlank { path.substringAfterLast('/') }
+                val info = ChapterLabel.parse(label, path)
                 SChapter.create().apply {
                     url = path
-                    name = label
-                    chapter_number = CHAPTER_NUMBER.find(label)?.groupValues?.get(1)?.toFloatOrNull()
-                        ?: CHAPTER_URL_NUMBER.find(path)?.groupValues?.get(1)?.toFloatOrNull()
-                        ?: -1f
+                    name = info.name
+                    chapter_number = info.number
                 }
             }
             .distinctBy { it.url }
@@ -184,9 +186,4 @@ abstract class Mangaruu : KeiSource() {
         !url.substringBefore('?').endsWith(".svg", ignoreCase = true)
 
     private fun String.toHttpUrlOrNullSafe(): HttpUrl? = runCatching { this.toHttpUrl() }.getOrNull()
-
-    companion object {
-        private val CHAPTER_NUMBER = Regex("""(\d+(?:\.\d+)?)\s*話""")
-        private val CHAPTER_URL_NUMBER = Regex("""-ch-(\d+(?:[.-]\d+)?)(?:-id-|$)""", RegexOption.IGNORE_CASE)
-    }
 }

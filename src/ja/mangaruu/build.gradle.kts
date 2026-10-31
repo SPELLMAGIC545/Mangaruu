@@ -7,7 +7,7 @@ plugins {
 
 keiyoushi {
     name = "Mangaruu"
-    versionCode = 2
+    versionCode = 3
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
 
@@ -33,6 +33,7 @@ dependencies {
     testImplementation(libs.bundles.common)
     testImplementation(libs.tachiyomi.lib.v16)
     testImplementation(libs.junit)
+    testImplementation("org.robolectric:robolectric:4.17")
 }
 
 tasks.withType<Test>().configureEach {

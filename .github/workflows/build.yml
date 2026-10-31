@@ -47,9 +47,18 @@ jobs:
           chmod +x gradlew
           ./gradlew :src:ja:mangaruu:spotlessApply --no-daemon
           # Hosted CI receives 403 for chapter HTML. Use the recorded metadata,
-          # but require successful live downloads and decoding of all 33 CDN images.
+          # but require successful live downloads and decoding of all 33 plain CDN images and 28 canva2 CDN images.
           MANGARUU_LIVE_TEST=1 MANGARUU_CAPTURED_METADATA=1 ./gradlew :src:ja:mangaruu:testDebugUnitTest --stacktrace --no-daemon
-          python -c "import xml.etree.ElementTree as E; r=E.parse('src/ja/mangaruu/build/test-results/testDebugUnitTest/TEST-eu.kanade.tachiyomi.extension.ja.mangaruu.ReaderTest.xml').getroot(); assert r.get('tests') == '3' and all(r.get(k) == '0' for k in ['failures', 'errors', 'skipped']), r.attrib"
+          python - <<'PYTEST'
+          import pathlib
+          import xml.etree.ElementTree as E
+          expected = {'ReaderTest': 3, 'ChapterLabelTest': 2, 'Canva2Test': 2, 'Canva2ImageInterceptorTest': 3}
+          roots = {E.parse(p).getroot().get('name').rsplit('.', 1)[-1]: E.parse(p).getroot() for p in pathlib.Path('src/ja/mangaruu/build/test-results/testDebugUnitTest').glob('TEST-*.xml')}
+          for name, count in expected.items():
+              r = roots[name]
+              assert int(r.get('tests')) == count and all(r.get(k) == '0' for k in ['failures', 'errors', 'skipped']), r.attrib
+          print('Verified 10 tests, zero failures/errors/skips, including both live image checks')
+          PYTEST
           ./gradlew :src:ja:mangaruu:assembleDebug --stacktrace --no-daemon
           ./gradlew :src:ja:mangaruu:lintRelease --stacktrace --no-daemon
       - name: Upload APK

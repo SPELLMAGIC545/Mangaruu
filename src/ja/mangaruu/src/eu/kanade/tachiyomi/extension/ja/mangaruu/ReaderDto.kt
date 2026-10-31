@@ -34,8 +34,7 @@ internal class ReaderChapter(
     @SerialName("_d") private val imageHost: String,
 ) {
     fun imageUrls(manifest: ReaderManifest): List<String> {
-        // Canva modes need pixel descrambling as well; don't return scrambled images.
-        require(mode == "image") { "Mangaruu: unsupported reader mode '$mode'" }
+        require(mode == "image" || mode == "canva2") { "Mangaruu: unsupported reader mode '$mode'" }
         val key = uuid.decodeHex()
         val host = imageHost.toHttpUrl()
         return manifest.entries().sortedBy { it.order }.map { entry ->
@@ -44,7 +43,9 @@ internal class ReaderChapter(
                 .aesDecrypt(aesCtr(key, encrypted.copyOfRange(0, 16)))
                 .decodeToString()
             // D is the site's normal alternative server; its paths are extensionless.
-            host.resolve(path)!!.toString()
+            host.resolve(path)!!.newBuilder()
+                .fragment(if (mode == "canva2") "mangaruu-canva2=$siteId" else null)
+                .build().toString()
         }
     }
 }
