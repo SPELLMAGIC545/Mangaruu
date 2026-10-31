@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.extension.ja.mangaruu
 
-import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -13,52 +12,56 @@ import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.extractNextJs
 import keiyoushi.utils.parseAs
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import java.net.URLEncoder
 
 @Source
 abstract class Mangaruu : KeiSource() {
 
     override fun OkHttpClient.Builder.configureClient(): OkHttpClient.Builder = addInterceptor(Canva2ImageInterceptor())
 
-    override suspend fun getPopularManga(page: Int): MangasPage = listManga("$baseUrl/${if (page > 1) "?page=$page" else ""}")
+    override suspend fun getPopularManga(page: Int): MangasPage = listManga(catalogUrl(baseUrl, "", page))
 
-    override suspend fun getLatestUpdates(page: Int): MangasPage = listManga("$baseUrl/on-going${if (page > 1) "?page=$page" else ""}")
+    override suspend fun getLatestUpdates(page: Int): MangasPage = listManga(catalogUrl(baseUrl, "/on-going", page))
 
-    private class GenreFilter :
-        Filter.Select<String>(
-            "ジャンル",
-            arrayOf("指定なし", "アクション", "冒険", "ホラー", "ロマンス"),
-        )
+    override val supportsFilterFetching = true
 
-    // KeiSource.getFilterList() is final; custom filter UI cannot override it.
-    // Genre selection remains unavailable until supported by KeiSource's API.
+    override suspend fun fetchFilterData(): JsonElement = client.get("$baseUrl/genres.json").parseAs()
 
-    override suspend fun getSearchMangaList(
-        page: Int,
-        query: String,
-        filters: FilterList,
-    ): MangasPage {
-        val genre = filters.filterIsInstance<GenreFilter>().firstOrNull()?.state ?: 0
-        val slugs = listOf("", "akushon", "bouken", "horaa", "romansu")
-        val keyword = query.trim()
-        if (genre > 0 && keyword.isBlank()) {
-            val slug = slugs.getOrNull(genre) ?: return MangasPage(emptyList(), false)
-            val suffix = if (page > 1) "/page/$page" else ""
-            return listManga("$baseUrl/genre/$slug$suffix")
+    override fun getFilterList(data: JsonElement?): FilterList = catalogFilters(data)
+
+    private val searchMutex = Mutex()
+    private var searchCatalog: List<CatalogManga> = emptyList()
+    private var searchLoadedAt = 0L
+
+    override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage = searchMutex.withLock {
+        val now = System.currentTimeMillis()
+        if (searchCatalog.isEmpty() || now - searchLoadedAt > 10 * 60 * 1000) {
+            val entries = mutableListOf<CatalogManga>()
+            var part = 1
+            while (true) {
+                val items = client.get("$baseUrl/mangas_$part.json", ensureSuccess = false).use { response ->
+                    // The site's own catalog loader ends at the first missing part.
+                    if (response.code == 404 && part > 1) return@use null
+                    check(response.isSuccessful) { "Mangaruu: catalog HTTP ${response.code}" }
+                    response.parseAs<CatalogPart>().list
+                } ?: break
+                if (items.isEmpty()) break
+                entries.addAll(items)
+                part++
+            }
+            searchCatalog = entries.distinctBy { it.slug }
+            searchLoadedAt = System.currentTimeMillis()
         }
-        val encoded = URLEncoder.encode(keyword, "UTF-8")
-        val suffix = if (page > 1) "&page=$page" else ""
-        val document = client.get("$baseUrl/search?q=$encoded$suffix").asJsoup()
-        val results = mangaListFrom(document)
-        // Combined genre + text search is not exposed by a confirmed site endpoint.
-        // Do not silently pretend that the selected genre was applied.
-        return results
+        val config = client.get("$baseUrl/config.json").parseAs<CatalogConfig>()
+        searchCatalog.search(query, filters, page, config).toMangasPage()
     }
 
     override suspend fun getMangaByUrl(url: HttpUrl): SManga? {
@@ -122,30 +125,10 @@ abstract class Mangaruu : KeiSource() {
         .build()
 
     private suspend fun listManga(url: String): MangasPage {
-        val document = client.get(url).asJsoup()
-        return mangaListFrom(document)
-    }
-
-    private fun mangaListFrom(document: Document): MangasPage {
-        val entries = document.select("a[href^=/m/], a[href*='mangaruu.com/m/']")
-            .mapNotNull { link ->
-                val absoluteUrl = link.absUrl("href")
-                val path = absoluteUrl.toHttpUrlOrNullSafe()?.encodedPath ?: return@mapNotNull null
-                if (!path.startsWith("/m/")) return@mapNotNull null
-                val thumb = preferredImageUrl(link.selectFirst("img"))
-                val label = link.selectFirst("h2, h3, h4, .title")?.text()
-                    ?: link.ownText().ifBlank { link.text() }
-                // Exclude navigation links and empty cards.
-                if (label.isBlank() && thumb.isNullOrBlank()) return@mapNotNull null
-                SManga.create().apply {
-                    this.url = path
-                    title = label.ifBlank { path.substringAfter("/m/").substringBeforeLast('-').replace('-', ' ') }
-                    thumbnail_url = thumb
-                }
-            }
-            .distinctBy { it.url }
-        val next = document.selectFirst("a[rel=next], a.next, .pagination a[aria-label=Next]") != null
-        return MangasPage(entries, next)
+        val data = client.get(url).extractNextJs<CatalogData>()
+            ?: error("Mangaruu: catalog metadata not found")
+        val config = client.get("$baseUrl/config.json").parseAs<CatalogConfig>()
+        return data.toPage(config).toMangasPage()
     }
 
     private fun coverUrl(document: Document): String? = preferredImageUrl(document.selectFirst("main img, article img, img[src*='cover'], img[data-src*='cover']"))
